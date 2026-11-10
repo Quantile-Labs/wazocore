@@ -1,0 +1,18 @@
+/target
+# Model weights and large artefacts never enter git
+*.safetensors
+*.gguf
+*.bin
+__pycache__/
+.venv/
+/data
+.DS_Store
+/vendor
+!wazocore/tests/fixtures/**
+results/**/*.log
+assets/fonts/
+# Internal work stays off the public repo
+paper/
+reports/
+research_notes/
+docs/PLAN-*.md
