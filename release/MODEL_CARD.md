@@ -19,36 +19,32 @@ tags:
   - tokenizer
   - bpe
   - translation
-  - n-atlas
   - llama-3
   - llama-cpp
   - gguf
 ---
 
-<!-- The N-ATLaS licence requires renamed derivatives to end with "Powered by Awarri." -->
-# WazoCore Powered by Awarri.
+# WazoCore
 
-**Faster in your own language.** WazoCore is N-ATLaS with
+**Faster in your own language.** WazoCore is an 8B language model with
 15,000 new Yoruba, Hausa and Igbo tokens. It writes these languages in 1.4 to
 1.6 times fewer tokens, so replies are written 1.6 to 1.7 times faster in
 llama.cpp and LM Studio, with no change to your code.
-
-> N-ATLaS is an initiative of the Federal Ministry of Communications,
-> Innovation and Digital Economy, and powered by Awarri Technologies.
 
 ## Model details
 
 | | |
 |---|---|
-| Developed by | [Quantile Labs](https://quantilelabs.com/), an independent laboratory building on-device AI for environmental sensing in low-resource settings. Registered in Nigeria, RC 9787446 |
+| Developed by | [Quantile Labs](https://quantilelabs.com/), a research lab that makes AI cheaper to run |
 | Base model | NCAIR1/N-ATLaS (Llama-3 architecture, 8B parameters) |
+| Licensed name | WazoCore Powered by Awarri. |
 | What changed | 15,000 added tokens for Yoruba, Hausa and Igbo: the vocabulary grows from 128,256 to 143,256. Every original token keeps its id and its exact embedding |
 | Files | A Q4_K_M GGUF (5.0 GB) and the full-precision weights |
 | Languages | Yoruba, Hausa, Igbo, English |
-| Licence | N-ATLaS Open-Source Research and Innovation License (see Licence) |
+| Licence | See [Licence](#licence) |
 | Code and evidence | [github.com/Quantile-Labs/wazocore](https://github.com/Quantile-Labs/wazocore) |
 
-N-ATLaS inherits Llama-3's vocabulary, which was built mostly for English. A
+The base model inherits Llama-3's vocabulary, which was built mostly for English. A
 Yoruba word costs about 2.9 tokens where an English word costs 1.2, so every
 Nigerian-language reply is slower to generate, more expensive to serve, and
 fits less context. WazoCore adds word and word-piece tokens for the three
@@ -59,9 +55,8 @@ English prose.
 ## Intended use
 
 Generating and translating Yoruba, Hausa and Igbo text on local hardware with
-llama.cpp or LM Studio, in place of N-ATLaS, where the token count in these
-languages limits speed, cost or context. Use is governed by the N-ATLaS
-licence.
+llama.cpp or LM Studio, in place of the base model, where the token count in these
+languages limits speed, cost or context. Use is governed by the licence below.
 
 ## Out of scope
 
@@ -84,14 +79,14 @@ curl -s localhost:8080/v1/chat/completions -H "Content-Type: application/json" \
 Always pass `-c`. Without it llama-server takes the context size from the
 file, which reports 131,072 tokens, and reserves memory for all of it.
 
-The full-precision weights load with `transformers` 5.x, like N-ATLaS. It runs
+The full-precision weights load with `transformers` 5.x, like the base model. It runs
 offline on a laptop with 8 GB of memory or more.
 
 ## Training data
 
 | Source | Used for | Amount |
 |---|---|---|
-| N-ATLaS's own greedy replies to translation requests, English to and from each language, with sources from Wikipedia | Training | About 24,000 requests |
+| The base model's own greedy replies to translation requests, English to and from each language, with sources from Wikipedia | Training | About 24,000 requests |
 | google/smol, professional translations (CC BY 4.0) | Training | 23,662 sentence pairs: Yoruba 8,647, Hausa 8,653, Igbo 6,362 |
 | Yoruba, Hausa and Igbo Wikipedia, filtered for careful spelling | Training and vocabulary | 15% of training tokens |
 | FLORES-200 dev split | Vocabulary only | With Wikipedia, 4M characters per language |
@@ -100,7 +95,7 @@ No FLORES or NTREX text is used in training.
 
 ## Training procedure
 
-1. **Vocabulary.** N-ATLaS's tokenizer is kept, and 15,000 BPE merges are
+1. **Vocabulary.** The base model's tokenizer is kept, and 15,000 BPE merges are
    learned on top of it from Yoruba, Hausa and Igbo Wikipedia and the FLORES
    dev split, with an equal share per language. Merges that would split a
    character are rejected. Original token ids are unchanged, and the tokenizer
@@ -123,9 +118,9 @@ No FLORES or NTREX text is used in training.
 
 ## Evaluation
 
-All numbers compare WazoCore with the original N-ATLaS.
+All numbers compare WazoCore with the base model.
 
-| WazoCore against N-ATLaS | Yoruba | Hausa | Igbo |
+| WazoCore against the base model | Yoruba | Hausa | Igbo |
 |---|---|---|---|
 | Tokens per word | 2.87 → 1.91 | 2.12 → 1.34 | 2.53 → 1.56 |
 | Speed-up in words per second, laptop CPU | 1.63×* | 1.61× | 1.72× |
@@ -182,14 +177,15 @@ Measurements and the full list are in sections 5 and 6 of
 ## Licence
 
 WazoCore is a derivative of N-ATLaS, released under the same **N-ATLaS
-Open-Source Research and Innovation License (Terms of Use v1.0)**. Key terms:
+Open-Source Research and Innovation License (Terms of Use v1.0)**. N-ATLaS is
+an initiative of the Federal Ministry of Communications, Innovation and Digital
+Economy, and powered by Awarri Technologies. Key terms:
 
-- the attribution above must be kept;
-- renamed derivatives must end in "Powered by Awarri.";
-- derivatives must use the same licence;
+- this attribution must be kept;
+- renamed derivatives must end in "Powered by Awarri." and use the same licence;
 - at most 1,000 active end-users per rolling 30 days without a commercial
   licence;
 - surveillance, discriminatory profiling, disinformation, military use and
   unauthorised personal-data scraping are prohibited.
 
-Read the full terms on the N-ATLaS model page before use.
+[Full terms](https://huggingface.co/NCAIR1/N-ATLaS).
