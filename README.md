@@ -4,7 +4,7 @@
 
 <sub>The same FLORES-200 passage in Yoruba, Hausa and Igbo. Replay of real tokenisations, streamed at the decode speed measured in llama.cpp on an Apple M4 CPU (8 tokens per second), shown at 2× speed. Text colour alternates at each token boundary.</sub>
 
-WazoCore is an 8B language model for Yoruba, Hausa and Igbo, adapted from N-ATLaS, Nigeria's open language model. It extends the base vocabulary with 15,000 tokens for the three languages, reducing token counts by roughly a third and accelerating generation 1.6 to 1.7 times on commodity hardware. It ships as a standard GGUF compatible with llama.cpp, LM Studio and any OpenAI-compatible stack.
+WazoCore is an 8B language model for Yoruba, Hausa and Igbo, adapted from N-ATLaS, Nigeria's open language model. It extends the base vocabulary with 15,000 tokens for the three languages, reducing token counts by roughly a third and accelerating generation 1.6 to 1.7 times on commodity hardware. It ships as full-precision Transformers weights and a GGUF compatible with llama.cpp, LM Studio and any OpenAI-compatible stack.
 
 **Latest release: v13.** Mathematical reasoning matches the base model, and translation quality is maintained or improved in all three languages. [Release notes](https://github.com/Quantile-Labs/wazocore/releases/tag/v13) · [Model](https://huggingface.co/quantile-labs/WazoCore-8B)
 
@@ -21,11 +21,11 @@ WazoCore is an 8B language model for Yoruba, Hausa and Igbo, adapted from N-ATLa
 |---|---|---|---|
 | Tokens per word | 2.87 → 1.91 | 2.12 → 1.34 | 2.53 → 1.56 |
 | Generation speed-up (words/s), laptop CPU | 1.63× | 1.61× | 1.72× |
-| ΔchrF++, English → X, Q4_K_M | +3.1 (+2.0, +4.1) | −0.4 (−1.2, +0.4) | +0.3 (−1.3, +1.7) |
+| ΔchrF++, English → X, Q4_K_M | +3.4 (+2.2, +4.6) | −0.6 (−1.4, +0.3) | +0.1 (−1.3, +1.3) |
 | ΔchrF++, English → X, held-out | +2.2 (+1.6, +2.8) | −0.4 (−0.9, 0.0) | +0.1 (−0.5, +0.7) |
 | ΔchrF++, X → English, held-out | +0.2 (−0.4, +0.7) | −0.1 (−0.5, +0.4) | +0.9 (+0.5, +1.4) |
-| AfriMGSM accuracy (WazoCore / base) | 37.2 / 33.6 | 40.4 / 38.8 | 26.0 / 28.0 |
-| AfriXNLI accuracy (WazoCore / base) | 52.7 / 57.7 | 53.0 / 57.5 | 52.5 / 58.8 |
+| AfriMGSM accuracy (WazoCore / base) | 37.2 / 33.6 | 40.4 / 38.8 | 25.6 / 28.0 |
+| AfriXNLI accuracy (WazoCore / base) | 52.3 / 57.7 | 54.2 / 57.5 | 53.0 / 58.8 |
 
 Speed is a paired, interleaved benchmark in llama.cpp (Q4_K_M, Apple M4 CPU, 20 prompts per language), measured with the v6 release, which shares v13's tokenizer and token efficiency. Translation is chrF++ against human references with 95% paired-bootstrap intervals, on 250 NTREX-128 sentences for the quantised file and on 1,497 held-out sentences per language at full precision. Reasoning is IrokoBench, zero-shot, at full precision. No test sentence is trained on.
 
@@ -91,8 +91,7 @@ scripts/paired_vx.sh LABEL 4 20 0 path/to/model.gguf
 
 ## Roadmap
 
-- **Full-precision weights** for v13 on Hugging Face.
-- **Reasoning**: close the remaining natural-language inference gap to the base model.
+- **Reasoning**: further gains in natural-language inference.
 - **More languages**: Nigerian Pidgin and Fulfulde next, then other African languages that pay the same token tax.
 - **Distribution**: Ollama and the LM Studio catalogue, and a technical report.
 

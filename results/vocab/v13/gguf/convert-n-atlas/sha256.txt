@@ -1,4 +1,4 @@
-07928d9678977fb2a8f35988eb4b0cead57f07e6229107e06880a687971b2282  /workspace/work/gguf/N-ATLaS.Q4_K_M.gguf
+f0b987fae150d810889b6d57c8a87e2dca218b5a1c438090e21f33a6043c0eb5  /workspace/work/gguf/N-ATLaS.Q4_K_M.gguf
 59c6c87e4cbe8787f154ac8499f3288f7f2da4e818b5657c6a755d60a9dd5ae0  /workspace/work/n-atlas/model-00001-of-00004.safetensors
 3d087dd3d4db2c54e4a313bccc417de4e4b470023a9e66aa42ab45df9e0a6e4c  /workspace/work/n-atlas/model-00002-of-00004.safetensors
 3384248a6cb07e82376ea87cc3d59e09af76022170e4a8f3a5708a33c0865a87  /workspace/work/n-atlas/model-00003-of-00004.safetensors

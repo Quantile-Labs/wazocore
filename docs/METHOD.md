@@ -416,8 +416,8 @@ resulting recipe was confirmed at three seeds against v6's two: *R*
 
 | | Yoruba | Hausa | Igbo | Pooled |
 |---|---|---|---|---|
-| AfriMGSM, v13 / base | 37.2 / 33.6 | 40.4 / 38.8 | 26.0 / 28.0 | +1.1 (−2.3, +4.4) |
-| AfriXNLI, v13 / base | 52.7 / 57.7 | 53.0 / 57.5 | 52.5 / 58.8 | −5.3 (−7.4, −3.1) |
+| AfriMGSM, v13 / base | 37.2 / 33.6 | 40.4 / 38.8 | 25.6 / 28.0 | +0.9 (−2.3, +4.3) |
+| AfriXNLI, v13 / base | 52.3 / 57.7 | 54.2 / 57.5 | 53.0 / 58.8 | −4.8 (−6.9, −2.7) |
 | AfriMGSM, v6 / base | 20.4 / 33.6 | 29.2 / 38.8 | 16.0 / 28.0 | −11.6 |
 | AfriXNLI, v6 / base | 48.2 / 57.7 | 53.3 / 57.5 | 50.0 / 58.8 | −7.5 |
 
@@ -426,13 +426,13 @@ intervals:
 
 | | Yoruba | Hausa | Igbo |
 |---|---|---|---|
-| English → X, Q4_K_M, 250 NTREX-128 sentences | +3.1 (+2.0, +4.1) | −0.4 (−1.2, +0.4) | +0.3 (−1.3, +1.7) |
+| English → X, Q4_K_M, 250 NTREX-128 sentences | +3.4 (+2.2, +4.6) | −0.6 (−1.4, +0.3) | +0.1 (−1.3, +1.3) |
 | English → X, 1,497 held-out sentences | +2.2 (+1.6, +2.8) | −0.4 (−0.9, 0.0) | +0.1 (−0.5, +0.7) |
 | X → English, 1,497 held-out sentences | +0.2 (−0.4, +0.7) | −0.1 (−0.5, +0.4) | +0.9 (+0.5, +1.4) |
 
-On the 750 shipped-file translations, v13 produced 2 looping replies (v6 5,
-base model 3), 8 truncated replies (v6 13, base model 15) and 1 reply with
-an incomplete UTF-8 character (v6 0, base model 0). llama.cpp's tokenisation
+On the 750 shipped-file translations, v13 produced no looping replies (v6 5,
+base model 4), 5 truncated replies (v6 11, base model 18) and no invalid
+UTF-8. llama.cpp's tokenisation
 of the GGUF matches the reference tokenizer on 2,000 of 2,000 texts; the
 GGUF does not apply the NFC normaliser itself, so clients should send NFC
 text. v13 has the same tokens per character as v6 on these sentences, so the

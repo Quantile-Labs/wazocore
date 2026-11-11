@@ -1,2 +1,2 @@
-bced9330e9cbb5f538a87da0ac0978cf80d8c0f520a2e5ba89d4b29d1dc0c9dd  /workspace/work/gguf/WazoCore-v13.Q4_K_M.gguf
-f85179c280be8c3b3e946337cad281d056fadc4a8dec1e3aa82d8736587ae9e3  /workspace/work/no-chat-ship-nfc/model.safetensors
+f8ae038f9c58efc35968502354bab8c3acfa5c154c5f3491fc579c78670e76ca  /workspace/work/gguf/WazoCore-v13.Q4_K_M.gguf
+2ff82101527996b969fc5096f6792f966443162bcf5b06ee320f56cb3523ef3e  /workspace/work/no-chat-ship-nfc/model.safetensors

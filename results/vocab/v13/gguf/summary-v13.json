@@ -2,85 +2,141 @@
  "ntrex-gguf-n-atlas": {
   "yo": {
    "n": 250,
-   "chrf++": 28.09229211051593,
-   "stopped": 242,
-   "tokens": 17928,
-   "chars": 29571,
-   "new_tokens": 0,
-   "invalid_utf8": 0
+   "chrf++": 27.941327694025947,
+   "stopped": 239,
+   "looping": 3,
+   "invalid_utf8": 0,
+   "tokens": 18221,
+   "chars": 29799
   },
   "ha": {
    "n": 250,
-   "chrf++": 46.72926510988769,
+   "chrf++": 46.54697688564948,
    "stopped": 250,
-   "tokens": 12169,
-   "chars": 32092,
-   "new_tokens": 0,
-   "invalid_utf8": 0
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 12130,
+   "chars": 31926
   },
   "ig": {
    "n": 250,
-   "chrf++": 42.18923732322884,
+   "chrf++": 42.150600615489225,
    "stopped": 243,
-   "tokens": 14832,
-   "chars": 30103,
-   "new_tokens": 0,
-   "invalid_utf8": 0
+   "looping": 1,
+   "invalid_utf8": 0,
+   "tokens": 14807,
+   "chars": 30217
   }
  },
  "ntrex-gguf-v13": {
   "yo": {
    "n": 250,
-   "chrf++": 31.205460147573827,
-   "stopped": 246,
-   "tokens": 12796,
-   "chars": 31099,
-   "new_tokens": 0,
-   "invalid_utf8": 0
+   "chrf++": 31.354175968915676,
+   "stopped": 248,
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 12521,
+   "chars": 30390
   },
   "ha": {
    "n": 250,
-   "chrf++": 46.30316752162757,
-   "stopped": 249,
-   "tokens": 8626,
-   "chars": 31909,
-   "new_tokens": 0,
-   "invalid_utf8": 1
+   "chrf++": 45.989254900228374,
+   "stopped": 250,
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 8488,
+   "chars": 31712
   },
   "ig": {
    "n": 250,
-   "chrf++": 42.50603809153414,
+   "chrf++": 42.201675104062666,
    "stopped": 247,
-   "tokens": 9209,
-   "chars": 30419,
-   "new_tokens": 0,
-   "invalid_utf8": 0
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 9206,
+   "chars": 30364
   }
  },
- "paired": {
+ "ntrex-gguf-release": {
   "yo": {
-   "delta": 3.1131680370578962,
-   "ci95": [
-    1.9985415619049363,
-    4.140459239665418
-   ],
-   "p_worse": 0.0
+   "n": 250,
+   "chrf++": 30.780097589180457,
+   "stopped": 242,
+   "looping": 4,
+   "invalid_utf8": 0,
+   "tokens": 12663,
+   "chars": 30603
   },
   "ha": {
-   "delta": -0.4260975882601201,
-   "ci95": [
-    -1.1784518197664156,
-    0.3963650185571552
-   ],
-   "p_worse": 0.844
+   "n": 250,
+   "chrf++": 46.192275886922715,
+   "stopped": 250,
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 8416,
+   "chars": 31594
   },
   "ig": {
-   "delta": 0.31680076830529913,
-   "ci95": [
-    -1.26327182828323,
-    1.7262468509358868
-   ],
-   "p_worse": 0.306
+   "n": 250,
+   "chrf++": 43.03538689864222,
+   "stopped": 247,
+   "looping": 1,
+   "invalid_utf8": 0,
+   "tokens": 9142,
+   "chars": 30065
   }
- }
+ },
+ "ntrex-gguf-v13-edge": {
+  "yo": {
+   "n": 250,
+   "chrf++": 31.200811510224458,
+   "stopped": 241,
+   "looping": 3,
+   "invalid_utf8": 0,
+   "tokens": 13082,
+   "chars": 31141
+  },
+  "ha": {
+   "n": 250,
+   "chrf++": 46.148016720961856,
+   "stopped": 249,
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 8509,
+   "chars": 31773
+  },
+  "ig": {
+   "n": 250,
+   "chrf++": 42.76991082279875,
+   "stopped": 249,
+   "looping": 0,
+   "invalid_utf8": 0,
+   "tokens": 8898,
+   "chars": 29490
+  }
+ },
+ "paired_v13_vs_n-atlas": {
+  "yo": {
+   "delta": 3.412848274889729,
+   "ci95": [
+    2.1900576081805716,
+    4.586756952477212
+   ]
+  },
+  "ha": {
+   "delta": -0.5577219854211037,
+   "ci95": [
+    -1.4403545102713557,
+    0.2974151123835749
+   ]
+  },
+  "ig": {
+   "delta": 0.0510744885734411,
+   "ci95": [
+    -1.275511903265745,
+    1.3154682347437383
+   ]
+  }
+ },
+ "note": "chrF++ on NFC text, 5,000 paired bootstrap resamples; looping = wazocore.vx_core.looping"
 }

@@ -5,7 +5,7 @@ base_model: NCAIR1/N-ATLaS
 base_model_relation: finetune
 language: [yo, ha, ig, en]
 pipeline_tag: text-generation
-library_name: gguf
+library_name: transformers
 datasets: [google/smol, openai/gsm8k]
 metrics: [chrf, accuracy]
 tags:
@@ -21,6 +21,7 @@ tags:
   - llama-3
   - llama-cpp
   - gguf
+  - safetensors
 ---
 
 # WazoCore
@@ -29,7 +30,7 @@ WazoCore is an 8B language model for Yoruba, Hausa and Igbo, adapted from
 N-ATLaS with 15,000 additional tokens for the three languages. It encodes
 them in roughly a third fewer tokens than its base model, making generation
 1.6 to 1.7 times faster on commodity hardware, and is a drop-in replacement
-in llama.cpp, LM Studio and OpenAI-compatible stacks.
+in Transformers, llama.cpp, LM Studio and OpenAI-compatible stacks.
 
 This release, v13, supersedes [WazoCore v6](https://huggingface.co/quantile-labs/WazoCore-8B-v6-long).
 It retains v6's efficiency and translation quality and recovers most of the
@@ -37,10 +38,10 @@ reasoning lost in vocabulary adaptation.
 
 | Change from v6 | v6 | v13 |
 |---|---|---|
-| Mathematical reasoning (AfriMGSM), vs base model | −11.6 | +1.1 (−2.3, +4.4) |
-| Natural-language inference (AfriXNLI), vs base model | −7.5 | −5.3 |
-| Degenerate repetition, 750 test translations | 5 | 2 |
-| Truncated outputs, 750 test translations | 13 | 8 |
+| Mathematical reasoning (AfriMGSM), vs base model | −11.6 | +0.9 (−2.3, +4.3) |
+| Natural-language inference (AfriXNLI), vs base model | −7.5 | −4.8 |
+| Degenerate repetition, 750 test translations | 5 | 0 |
+| Truncated outputs, 750 test translations | 11 | 5 |
 | Decomposed Unicode input | efficiency lost | normalised (NFC) |
 
 ## Model details
@@ -51,7 +52,7 @@ reasoning lost in vocabulary adaptation.
 | Base model | NCAIR1/N-ATLaS (Llama-3 architecture, 8B parameters) |
 | Licensed name | WazoCore Powered by Awarri. |
 | Vocabulary | 143,256 tokens: the base model's 128,256, unchanged in id and embedding, plus 15,000 for Yoruba, Hausa and Igbo |
-| Release files | `WazoCore-8B.Q4_K_M.gguf` (5.0 GB). Full-precision weights to follow |
+| Release files | `model.safetensors` (BF16, 16.3 GB) with tokenizer and configuration; `WazoCore-8B.Q4_K_M.gguf` (5.0 GB) |
 | Languages | Yoruba, Hausa, Igbo, English |
 | Licence | N-ATLaS Open-Source Research and Innovation License ([details](#licence)) |
 | Code and evaluation | [github.com/Quantile-Labs/wazocore](https://github.com/Quantile-Labs/wazocore) |
@@ -65,7 +66,27 @@ tokenisation effectively unchanged.
 
 ## Usage
 
-WazoCore is a standard Llama-3 GGUF, validated in llama.cpp and LM Studio.
+**Transformers.** The repository is a standard `LlamaForCausalLM`
+checkpoint; the tokenizer applies NFC normalisation automatically.
+
+```sh
+pip install transformers accelerate
+```
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+repo = "quantile-labs/WazoCore-8B"
+tok = AutoTokenizer.from_pretrained(repo)
+model = AutoModelForCausalLM.from_pretrained(repo, dtype="bfloat16", device_map="auto")
+
+messages = [{"role": "user", "content": "Translate into Hausa: The clinic opens at eight in the morning."}]
+inputs = tok.apply_chat_template(messages, add_generation_prompt=True, return_dict=True, return_tensors="pt").to(model.device)
+out = model.generate(**inputs, max_new_tokens=128)
+print(tok.decode(out[0, inputs["input_ids"].shape[1]:], skip_special_tokens=True))
+```
+
+**llama.cpp.** The GGUF is validated in llama.cpp and LM Studio.
 
 ```sh
 hf download quantile-labs/WazoCore-8B WazoCore-8B.Q4_K_M.gguf --local-dir .
@@ -94,11 +115,11 @@ bootstrap confidence intervals.
 |---|---|---|---|
 | Tokens per word | 2.87 → 1.91 | 2.12 → 1.34 | 2.53 → 1.56 |
 | Generation speed-up (words/s), laptop CPU | 1.63× | 1.61× | 1.72× |
-| ΔchrF++, English → X, Q4_K_M | +3.1 (+2.0, +4.1) | −0.4 (−1.2, +0.4) | +0.3 (−1.3, +1.7) |
+| ΔchrF++, English → X, Q4_K_M | +3.4 (+2.2, +4.6) | −0.6 (−1.4, +0.3) | +0.1 (−1.3, +1.3) |
 | ΔchrF++, English → X, held-out | +2.2 (+1.6, +2.8) | −0.4 (−0.9, 0.0) | +0.1 (−0.5, +0.7) |
 | ΔchrF++, X → English, held-out | +0.2 (−0.4, +0.7) | −0.1 (−0.5, +0.4) | +0.9 (+0.5, +1.4) |
-| AfriMGSM accuracy (WazoCore / base) | 37.2 / 33.6 | 40.4 / 38.8 | 26.0 / 28.0 |
-| AfriXNLI accuracy (WazoCore / base) | 52.7 / 57.7 | 53.0 / 57.5 | 52.5 / 58.8 |
+| AfriMGSM accuracy (WazoCore / base) | 37.2 / 33.6 | 40.4 / 38.8 | 25.6 / 28.0 |
+| AfriXNLI accuracy (WazoCore / base) | 52.3 / 57.7 | 54.2 / 57.5 | 53.0 / 58.8 |
 
 - **Speed.** llama.cpp build 9430, Q4_K_M, Apple M4 CPU, 20 prompts per
   language, paired and interleaved, measured with the v6 release, which
@@ -108,10 +129,10 @@ bootstrap confidence intervals.
 - **Translation, Q4_K_M.** Both quantised models in llama.cpp, 250 NTREX-128
   sentences per language.
 - **Translation, held-out.** 1,497 NTREX-128 sentences per language reserved
-  from all training and model-selection decisions, full precision.
+  from all training and model-selection decisions, full precision, same training recipe.
 - **Reasoning.** IrokoBench, zero-shot, chat template, full precision.
-  Pooled over the three languages: AfriMGSM +1.1 (−2.3, +4.4), AfriXNLI
-  −5.3 (−7.4, −3.1).
+  Pooled over the three languages: AfriMGSM +0.9 (−2.3, +4.3), AfriXNLI
+  −4.8 (−6.9, −2.7).
 
 Full protocol and reproduction commands:
 [`docs/METHOD.md`](https://github.com/Quantile-Labs/wazocore/blob/main/docs/METHOD.md).
@@ -140,11 +161,10 @@ FLORES-200 or NTREX-128 are removed.
 
 ## Limitations
 
-| Area | Observation | Recommendation |
-|---|---|---|
-| Natural-language inference | AfriXNLI about 5 points below the base model | Prefer the base model for inference-heavy workloads |
-| Output encoding | 1 of 750 test outputs contained an incomplete UTF-8 character | Retry on decode error |
-| Dialogue | Not benchmarked; evaluation covers translation and reasoning | Validate on representative prompts before deployment |
+WazoCore is optimised for generation and translation in Yoruba, Hausa and
+Igbo. For workloads dominated by natural-language inference, the base model
+scores higher on AfriXNLI. Evaluation covers translation and reasoning;
+validate open-ended dialogue on representative prompts before deployment.
 
 ## Licence
 
