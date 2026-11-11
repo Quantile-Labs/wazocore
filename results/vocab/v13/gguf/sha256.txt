@@ -1,0 +1,4 @@
+bced9330e9cbb5f538a87da0ac0978cf80d8c0f520a2e5ba89d4b29d1dc0c9dd  WazoCore-v13.Q4_K_M.gguf
+84c4399f3c2bc8e7d2bea736cc905415c2fa1f1310df8d83161251f663af7129  WazoCore-v13.Q4_K_M.edge-q8_0.gguf
+07928d9678977fb2a8f35988eb4b0cead57f07e6229107e06880a687971b2282  N-ATLaS.Q4_K_M.gguf
+b2cc164f09e958d16cef0b5ac887c77c6f09f94c0639ddaddf925999eed3fca3  release/WazoCore-8B.Q4_K_M.gguf

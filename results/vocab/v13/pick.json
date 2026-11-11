@@ -1,0 +1,69 @@
+{
+ "margin": 1.0,
+ "release": {
+  "yo": {
+   "chrf++": 31.654327834607727,
+   "chars_per_token": 2.4478065330598073,
+   "n": 500
+  },
+  "ha": {
+   "chrf++": 46.26328637989138,
+   "chars_per_token": 3.864464488381817,
+   "n": 500
+  },
+  "ig": {
+   "chrf++": 44.61780535461378,
+   "chars_per_token": 3.4061319957166205,
+   "n": 500
+  }
+ },
+ "checked": {
+  "no-chat": {
+   "yo": {
+    "chrf++": 31.264436872700195,
+    "chars_per_token": 2.396609004467866,
+    "n": 500
+   },
+   "ha": {
+    "chrf++": 46.428298903054,
+    "chars_per_token": 3.8555495592732507,
+    "n": 500
+   },
+   "ig": {
+    "chrf++": 44.11676600676818,
+    "chars_per_token": 3.4125292870690616,
+    "n": 500
+   }
+  },
+  "no-math": {
+   "yo": {
+    "chrf++": 31.639902977547703,
+    "chars_per_token": 2.426755565953133,
+    "n": 500
+   },
+   "ha": {
+    "chrf++": 46.25675000383218,
+    "chars_per_token": 3.828616536077652,
+    "n": 500
+   },
+   "ig": {
+    "chrf++": 43.9680552898312,
+    "chars_per_token": 3.368617683686177,
+    "n": 500
+   }
+  }
+ },
+ "qualifies": {
+  "no-chat": true,
+  "no-math": true
+ },
+ "candidate": "no-chat",
+ "sensitivity": {
+  "margin": 0.5,
+  "qualifies": {
+   "no-chat": false,
+   "no-math": false
+  },
+  "candidate": null
+ }
+}

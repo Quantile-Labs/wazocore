@@ -1,0 +1,14 @@
+{
+ "stage2": true,
+ "candidate": "no-chat",
+ "q1_chat_suppresses": true,
+ "q1_maths_suppresses": false,
+ "q2": {
+  "recovery_R": true,
+  "recovery_R_gen": true,
+  "recovery": true,
+  "translation_holds": true,
+  "token_saving_holds": true,
+  "maths_holds": true
+ }
+}

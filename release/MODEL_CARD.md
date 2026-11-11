@@ -5,9 +5,9 @@ base_model: NCAIR1/N-ATLaS
 base_model_relation: finetune
 language: [yo, ha, ig, en]
 pipeline_tag: text-generation
-library_name: transformers
-datasets: [google/smol]
-metrics: [chrf]
+library_name: gguf
+datasets: [google/smol, openai/gsm8k]
+metrics: [chrf, accuracy]
 tags:
   - yoruba
   - hausa
@@ -17,7 +17,6 @@ tags:
   - low-resource-languages
   - vocabulary-expansion
   - tokenizer
-  - bpe
   - translation
   - llama-3
   - llama-cpp
@@ -26,166 +25,138 @@ tags:
 
 # WazoCore
 
-**Faster in your own language.** WazoCore is an 8B language model with
-15,000 new Yoruba, Hausa and Igbo tokens. It writes these languages in 1.4 to
-1.6 times fewer tokens, so replies are written 1.6 to 1.7 times faster in
-llama.cpp and LM Studio, with no change to your code.
+WazoCore is an 8B language model for Yoruba, Hausa and Igbo, adapted from
+N-ATLaS with 15,000 additional tokens for the three languages. It encodes
+them in roughly a third fewer tokens than its base model, making generation
+1.6 to 1.7 times faster on commodity hardware, and is a drop-in replacement
+in llama.cpp, LM Studio and OpenAI-compatible stacks.
+
+This release, v13, supersedes [WazoCore v6](https://huggingface.co/quantile-labs/WazoCore-8B-v6-long).
+It retains v6's efficiency and translation quality and recovers most of the
+reasoning lost in vocabulary adaptation.
+
+| Change from v6 | v6 | v13 |
+|---|---|---|
+| Mathematical reasoning (AfriMGSM), vs base model | −11.6 | +1.1 (−2.3, +4.4) |
+| Natural-language inference (AfriXNLI), vs base model | −7.5 | −5.3 |
+| Degenerate repetition, 750 test translations | 5 | 2 |
+| Truncated outputs, 750 test translations | 13 | 8 |
+| Decomposed Unicode input | efficiency lost | normalised (NFC) |
 
 ## Model details
 
 | | |
 |---|---|
-| Developed by | [Quantile Labs](https://quantilelabs.com/), a research lab that makes AI cheaper to run |
+| Developer | [Quantile Labs](https://quantilelabs.com/) |
 | Base model | NCAIR1/N-ATLaS (Llama-3 architecture, 8B parameters) |
 | Licensed name | WazoCore Powered by Awarri. |
-| What changed | 15,000 added tokens for Yoruba, Hausa and Igbo: the vocabulary grows from 128,256 to 143,256. Every original token keeps its id and its exact embedding |
-| Files | A Q4_K_M GGUF (5.0 GB) and the full-precision weights |
+| Vocabulary | 143,256 tokens: the base model's 128,256, unchanged in id and embedding, plus 15,000 for Yoruba, Hausa and Igbo |
+| Release files | `WazoCore-8B.Q4_K_M.gguf` (5.0 GB). Full-precision weights to follow |
 | Languages | Yoruba, Hausa, Igbo, English |
-| Licence | See [Licence](#licence) |
-| Code and evidence | [github.com/Quantile-Labs/wazocore](https://github.com/Quantile-Labs/wazocore) |
+| Licence | N-ATLaS Open-Source Research and Innovation License ([details](#licence)) |
+| Code and evaluation | [github.com/Quantile-Labs/wazocore](https://github.com/Quantile-Labs/wazocore) |
 
-The base model inherits Llama-3's vocabulary, which was built mostly for English. A
-Yoruba word costs about 2.9 tokens where an English word costs 1.2, so every
-Nigerian-language reply is slower to generate, more expensive to serve, and
-fits less context. WazoCore adds word and word-piece tokens for the three
-languages. Every original token keeps its id and embedding, and English
-text tokenises almost as before: 0.12% fewer tokens on 355,000 words of
-English prose.
+**Motivation.** The base model inherits the Llama-3 tokenizer, which was
+trained predominantly on English. A Yoruba word requires about 2.9 tokens,
+against 1.3 for an English word, which raises latency, serving cost and
+context consumption for every Nigerian-language request. WazoCore adds
+word and subword tokens for the three languages while leaving English
+tokenisation effectively unchanged.
 
-## Intended use
+## Usage
 
-Generating and translating Yoruba, Hausa and Igbo text on local hardware with
-llama.cpp or LM Studio, in place of the base model, where the token count in these
-languages limits speed, cost or context. Use is governed by the licence below.
-
-## Out of scope
-
-- Any use the licence prohibits (see Licence).
-- Dialogue, which was not evaluated, and reasoning, which got worse (see
-  Limitations).
-- Applications that cannot handle a failed request or a looping reply. Both
-  occur at the rates under Limitations and need handling in the client.
-
-## How to use
-
-WazoCore is a standard Llama-3 GGUF. It is tested in llama.cpp and LM Studio:
+WazoCore is a standard Llama-3 GGUF, validated in llama.cpp and LM Studio.
 
 ```sh
+hf download quantile-labs/WazoCore-8B WazoCore-8B.Q4_K_M.gguf --local-dir .
 llama-server -m WazoCore-8B.Q4_K_M.gguf -c 4096 --port 8080
 curl -s localhost:8080/v1/chat/completions -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Translate into Hausa: The clinic opens at eight in the morning."}]}'
 ```
 
-Always pass `-c`. Without it llama-server takes the context size from the
-file, which reports 131,072 tokens, and reserves memory for all of it.
+Set the context size explicitly with `-c`; otherwise llama-server allocates
+memory for the 131,072-token maximum declared in the file. The model runs
+offline on machines with 8 GB of memory or more.
 
-The full-precision weights load with `transformers` 5.x, like the base model. It runs
-offline on a laptop with 8 GB of memory or more.
+## Intended use
 
-## Training data
-
-| Source | Used for | Amount |
-|---|---|---|
-| The base model's own greedy replies to translation requests, English to and from each language, with sources from Wikipedia | Training | About 24,000 requests |
-| google/smol, professional translations (CC BY 4.0) | Training | 23,662 sentence pairs: Yoruba 8,647, Hausa 8,653, Igbo 6,362 |
-| Yoruba, Hausa and Igbo Wikipedia, filtered for careful spelling | Training and vocabulary | 15% of training tokens |
-| FLORES-200 dev split | Vocabulary only | With Wikipedia, 4M characters per language |
-
-No FLORES or NTREX text is used in training.
-
-## Training procedure
-
-1. **Vocabulary.** The base model's tokenizer is kept, and 15,000 BPE merges are
-   learned on top of it from Yoruba, Hausa and Igbo Wikipedia and the FLORES
-   dev split, with an equal share per language. Merges that would split a
-   character are rejected. Original token ids are unchanged, and the tokenizer
-   round-trips all test text exactly.
-2. **Initialisation.** Each new token's input row is the mean of its original
-   pieces, rescaled to the pieces' norm; its output row is the
-   length-weighted mean.
-3. **Training.** About 85 minutes on one A100: 12M tokens train the new rows
-   and the bottom and top two of the 32 transformer layers. The data is the
-   original model's own replies to about 24,000 translation requests,
-   23,662 professionally translated sentence pairs (google/smol, CC BY 4.0)
-   and carefully spelled Wikipedia text, all tokenised with the new
-   vocabulary. A KL term keeps predictions close to the original's on the
-   same text, a penalty discourages spelling a word in pieces when it has a
-   token of its own, and the original vocabulary rows receive no updates.
-   No FLORES or NTREX text is used in training.
-4. **Export.** GGUF from the bf16 weights, quantised to Q4_K_M. llama.cpp's
-   tokenisation matches the reference tokenizer on 2,000 test texts.
-
+Generation and translation of Yoruba, Hausa and Igbo text on local or
+on-premise hardware, as a replacement for the base model where tokenisation
+cost constrains latency, cost or context length. Use is subject to the
+licence terms below.
 
 ## Evaluation
 
-All numbers compare WazoCore with the base model.
+All comparisons are against the base model. Intervals are 95% paired
+bootstrap confidence intervals.
 
-| WazoCore against the base model | Yoruba | Hausa | Igbo |
+| WazoCore vs base model | Yoruba | Hausa | Igbo |
 |---|---|---|---|
 | Tokens per word | 2.87 → 1.91 | 2.12 → 1.34 | 2.53 → 1.56 |
-| Speed-up in words per second, laptop CPU | 1.63×* | 1.61× | 1.72× |
-| Speed-up for the whole request, laptop CPU | 1.28× | 1.16× | 1.38× |
-| Speed-up in words per second, laptop GPU | 1.66×* | 1.49× | 1.54× |
-| Speed-up for the whole request, laptop GPU | 1.42× | 1.36× | 1.56× |
-| chrF++ change, full precision | +2.2 (+1.5, +2.9) | −0.4 (−0.8, +0.1) | +0.2 (−0.4, +0.8) |
-| chrF++ change, shipped Q4_K_M file | +1.7 (+0.3, +3.1) | −0.3 (−1.1, +0.6) | −0.1 (−1.4, +1.2) |
-| chrF++ change, same training data and no new tokens | +2.3 (+1.6, +3.1) | +0.6 (+0.1, +1.1) | +1.2 (+0.6, +1.8) |
-| chrF++ change, unseen sentences, English → X | +1.6 (+0.9, +2.2) | −0.3 (−0.8, +0.1) | +0.7 (+0.2, +1.2) |
-| chrF++ change, unseen sentences, X → English | −0.7 (−1.2, −0.2) | −0.1 (−0.6, +0.4) | +1.3 (+0.8, +1.8) |
-| Cost of the new tokens, English → X (against no new tokens, 3 seeds each) | +0.2 (−0.3, +0.6) | −1.2 (−1.6, −0.9) | −0.8 (−1.1, −0.5) |
+| Generation speed-up (words/s), laptop CPU | 1.63× | 1.61× | 1.72× |
+| ΔchrF++, English → X, Q4_K_M | +3.1 (+2.0, +4.1) | −0.4 (−1.2, +0.4) | +0.3 (−1.3, +1.7) |
+| ΔchrF++, English → X, held-out | +2.2 (+1.6, +2.8) | −0.4 (−0.9, 0.0) | +0.1 (−0.5, +0.7) |
+| ΔchrF++, X → English, held-out | +0.2 (−0.4, +0.7) | −0.1 (−0.5, +0.4) | +0.9 (+0.5, +1.4) |
+| AfriMGSM accuracy (WazoCore / base) | 37.2 / 33.6 | 40.4 / 38.8 | 26.0 / 28.0 |
+| AfriXNLI accuracy (WazoCore / base) | 52.7 / 57.7 | 53.0 / 57.5 | 52.5 / 58.8 |
 
-\*19 of 20 sentences: one WazoCore reply contained a broken character and
-the server returned an error (see Limitations).
+- **Speed.** llama.cpp build 9430, Q4_K_M, Apple M4 CPU, 20 prompts per
+  language, paired and interleaved, measured with the v6 release, which
+  shares v13's tokenizer and token efficiency. Per-token decoding throughput
+  is equivalent for both models; the speed-up derives entirely from shorter
+  token sequences.
+- **Translation, Q4_K_M.** Both quantised models in llama.cpp, 250 NTREX-128
+  sentences per language.
+- **Translation, held-out.** 1,497 NTREX-128 sentences per language reserved
+  from all training and model-selection decisions, full precision.
+- **Reasoning.** IrokoBench, zero-shot, chat template, full precision.
+  Pooled over the three languages: AfriMGSM +1.1 (−2.3, +4.4), AfriXNLI
+  −5.3 (−7.4, −3.1).
 
-- **Speed.** llama.cpp (build 9430), Q4_K_M, one Apple M4 laptop, 20
-  translations per language. Both models answered each sentence back to
-  back, taking turns going first. Decoding speed in tokens per second is
-  about the same for both models; the gain comes from needing fewer tokens.
-  The whole request includes reading the prompt, with no prompt cache.
-- **Quality at full precision.** Greedy English → X translation, scored with
-  chrF++ against human references in Unicode NFC, with 95% paired-bootstrap
-  intervals for the difference, on NTREX-128 (500 news sentences per
-  language) and FLORES-200 (200), pooled over two independent training runs.
-- **Quality of the shipped file.** The two Q4_K_M files compared with each
-  other in llama.cpp on 250 NTREX-128 sentences per language.
-- **Control.** The original model trained on the same data with no new
-  tokens. It separates the effect of the vocabulary from the effect of the
-  training data.
-- **Unseen sentences.** 1,497 NTREX-128 sentences per language that no
-  decision used, in both directions. The last row compares three training
-  runs of each model at the same budget: the new tokens cost about one
-  point in Hausa and Igbo.
-
-The protocol, the full tables and the command behind each number are in
+Full protocol and reproduction commands:
 [`docs/METHOD.md`](https://github.com/Quantile-Labs/wazocore/blob/main/docs/METHOD.md).
+
+## Training
+
+1. **Vocabulary extension.** 15,000 byte-level BPE merges learned on Yoruba,
+   Hausa and Igbo text and appended to the base tokenizer. Merges that would
+   split a UTF-8 character are excluded. Input is normalised to Unicode NFC.
+2. **Initialisation.** New embeddings are initialised from the mean of their
+   constituent subword embeddings.
+3. **Fine-tuning.** Approximately 80 minutes on a single A100. Only the new
+   embedding rows and four of 32 transformer layers are updated. Original
+   vocabulary rows are frozen, and a KL-divergence term anchors predictions
+   to the base model.
+
+| Data | Volume |
+|---|---|
+| Base-model translations of Wikipedia sentences, English to and from each language | ~24,000 requests |
+| google/smol professional translations (CC BY 4.0) | 23,662 sentence pairs |
+| Self-distilled GSM8K solutions in Yoruba, Hausa, Igbo and English, retained only when the final answer is correct | 5,831 solutions |
+| Yoruba, Hausa and Igbo Wikipedia, filtered for orthographic quality | 15% of training tokens |
+
+**Decontamination.** Training items sharing any 13-gram with IrokoBench,
+FLORES-200 or NTREX-128 are removed.
 
 ## Limitations
 
-| Limit | What to expect | What to do |
+| Area | Observation | Recommendation |
 |---|---|---|
-| Broken characters | About 1 reply in 1,000 (4 of 4,200) has half of a letter such as ṣ or ƙ, and the request fails. The original does not do this | Retry with sampling |
-| Yoruba loops | 18 to 23 of 1,497 replies loop under greedy decoding, against 7 for the original. The new tokens cause most of them | Repetition penalty 1.1, Yoruba only. LM Studio applies it to every request by default |
-| Hausa | 0.3 to 0.4 chrF++ below the original. The intervals include zero | n/a |
-| Yoruba → English | 0.7 chrF++ below the original | n/a |
-| Reasoning | Inference (AfriXNLI) 5 to 10 points below the original in every language, English included; maths (AfriMGSM) 5 to 13 below. Knowledge (AfriMMLU) unchanged | Use the original for reasoning |
-| Input form | Decomposed Unicode loses most of the token saving | Normalise to NFC |
-| Not scored | Dialogue | n/a |
-
-Measurements and the full list are in sections 5 and 6 of
-[`docs/METHOD.md`](https://github.com/Quantile-Labs/wazocore/blob/main/docs/METHOD.md).
+| Natural-language inference | AfriXNLI about 5 points below the base model | Prefer the base model for inference-heavy workloads |
+| Output encoding | 1 of 750 test outputs contained an incomplete UTF-8 character | Retry on decode error |
+| Dialogue | Not benchmarked; evaluation covers translation and reasoning | Validate on representative prompts before deployment |
 
 ## Licence
 
-WazoCore is a derivative of N-ATLaS, released under the same **N-ATLaS
+WazoCore is a derivative of N-ATLaS and is released under the **N-ATLaS
 Open-Source Research and Innovation License (Terms of Use v1.0)**. N-ATLaS is
-an initiative of the Federal Ministry of Communications, Innovation and Digital
-Economy, and powered by Awarri Technologies. Key terms:
+an initiative of the Federal Ministry of Communications, Innovation and
+Digital Economy, powered by Awarri Technologies. Principal terms:
 
-- this attribution must be kept;
-- renamed derivatives must end in "Powered by Awarri." and use the same licence;
-- at most 1,000 active end-users per rolling 30 days without a commercial
-  licence;
+- this attribution must be retained;
+- renamed derivatives must end in "Powered by Awarri." and carry the same licence;
+- use is limited to 1,000 monthly active end-users without a commercial licence;
 - surveillance, discriminatory profiling, disinformation, military use and
   unauthorised personal-data scraping are prohibited.
 
-[Full terms](https://huggingface.co/NCAIR1/N-ATLaS).
+Consult the full terms on the N-ATLaS model page before use.

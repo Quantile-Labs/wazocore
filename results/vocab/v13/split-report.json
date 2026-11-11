@@ -1,0 +1,55 @@
+{
+ "rows": {
+  "gold": 71164,
+  "chat": 11498,
+  "maths": 5831
+ },
+ "distinct": {
+  "gold": 71058,
+  "maths": 5829,
+  "chat": 6348
+ },
+ "tokens_release_tokenizer": {
+  "gold": 7246011,
+  "chat": 1157343,
+  "maths": 1072219
+ },
+ "no-chat": {
+  "rows": 76995,
+  "consumed": {
+   "release_tokenizer": {
+    "windows_in_file": 16246,
+    "windows_taken": 19911,
+    "passes": 1.23,
+    "instruction_share_of_chat": 0.1285,
+    "instruction_share_of_training": 0.1092
+   },
+   "original_tokenizer": {
+    "windows_in_file": 19696,
+    "windows_taken": 19911,
+    "passes": 1.01,
+    "instruction_share_of_chat": 0.1343,
+    "instruction_share_of_training": 0.1142
+   }
+  }
+ },
+ "no-math": {
+  "rows": 82662,
+  "consumed": {
+   "release_tokenizer": {
+    "windows_in_file": 16412,
+    "windows_taken": 19911,
+    "passes": 1.21,
+    "instruction_share_of_chat": 0.1382,
+    "instruction_share_of_training": 0.1175
+   },
+   "original_tokenizer": {
+    "windows_in_file": 19833,
+    "windows_taken": 19911,
+    "passes": 1.0,
+    "instruction_share_of_chat": 0.1403,
+    "instruction_share_of_training": 0.1192
+   }
+  }
+ }
+}

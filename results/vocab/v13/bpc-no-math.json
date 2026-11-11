@@ -1,0 +1,41 @@
+{
+ "model": "/workspace/work/no-math",
+ "rows": [
+  {
+   "lang": "en",
+   "sentences": 1012,
+   "chars": 131966,
+   "tokens": 27114,
+   "nll_nats": 91757.25631713867,
+   "bpc": 1.0031200358752517,
+   "tokens_per_char": 0.20546201294272767
+  },
+  {
+   "lang": "yo",
+   "sentences": 1012,
+   "chars": 126848,
+   "tokens": 46603,
+   "nll_nats": 203362.41087722778,
+   "bpc": 2.312925246561241,
+   "tokens_per_char": 0.3673924697275479
+  },
+  {
+   "lang": "ha",
+   "sentences": 1012,
+   "chars": 140069,
+   "tokens": 33838,
+   "nll_nats": 148009.47814559937,
+   "bpc": 1.5244810780773734,
+   "tokens_per_char": 0.24158093511055265
+  },
+  {
+   "lang": "ig",
+   "sentences": 1012,
+   "chars": 134560,
+   "tokens": 38612,
+   "nll_nats": 178073.00136947632,
+   "bpc": 1.9092229190841044,
+   "tokens_per_char": 0.2869500594530321
+  }
+ ]
+}

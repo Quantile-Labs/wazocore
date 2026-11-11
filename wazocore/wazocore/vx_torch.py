@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 import time
 from pathlib import Path
 from typing import Sequence
 
-from wazocore.vx_core import ENGLISH_MARKERS, bits_per_char, byte_decoder, careful_text, char_lengths, chunk_align, chunks, decompose, init_rows, looping, lr_at, mbr_pick, merge_table, mixture, nfc_rows, norm_calibrated, sign_test, smol_pairs
+from wazocore.vx_core import ENGLISH_MARKERS, bits_per_char, byte_decoder, careful_text, char_lengths, chunk_align, chunks, decompose, init_rows, looping, lr_at, mbr_pick, merge_table, mixture, nfc_rows, norm_calibrated, sign_test, smol_pairs, strip_marks, layer_weight, train_layers, lr_scales
 
 CODES = {"en": "eng_Latn", "yo": "yor_Latn", "ha": "hau_Latn", "ig": "ibo_Latn"}
 
@@ -238,6 +239,20 @@ def teacher_at(teacher, rows: Sequence[Sequence[int]], pieces, pad: int, device:
     return logits.gather(1, at[:, :, None].expand(-1, -1, logits.shape[-1]))
 
 
+def extra_anchor_kl(model, teacher, rows, pieces, pad: int, first_piece, offsets, rights):
+    """v12: the canonical anchor on `rows` alone, with no cross-entropy:
+    KL(teacher || student) at every position, the student projected onto
+    the original vocabulary and the teacher reading the same text in its
+    own pieces, exactly as the training-text anchor computes it."""
+    import torch
+
+    batch = torch.tensor(rows, device=first_piece.device)
+    s_logits = model(input_ids=batch[:, :-1]).logits.float()
+    t_logits = teacher_at(teacher, rows, pieces, pad, first_piece.device.type)
+    return projected_kl(s_logits.reshape(-1, s_logits.shape[-1]), t_logits.reshape(-1, t_logits.shape[-1]),
+                        first_piece, batch[:, :-1].reshape(-1), offsets, rights)
+
+
 def canonical_processor(offsets, rights):
     """A `generate` logits processor that forbids the pairs in
     `merge_table`, so replies are written the way the tokenizer would
@@ -336,7 +351,7 @@ def stage_train(args) -> int:
     nt = args.model / "new_tokens.json"
     first_new = json.loads(nt.read_text())["first_id"] if nt.exists() else model.config.vocab_size
     n_layers = model.config.num_hidden_layers
-    layers = [*range(args.edge_layers), *range(n_layers - args.edge_layers, n_layers)]
+    layers = train_layers(n_layers, args.edge_layers, args.layers)
     for m in [model.get_input_embeddings(), model.get_output_embeddings(), *(model.model.layers[i] for i in layers)]:
         m.float()
     model = model.to(args.device)
@@ -345,7 +360,11 @@ def stage_train(args) -> int:
     model.gradient_checkpointing_enable()
     model.train()  # checkpointing only applies in training mode
     params = set_trainable(model, first_new, layers)
-    print(f"trainable: {sum(p.numel() for p in params) / 1e6:.0f}M (new rows masked to {model.config.vocab_size - first_new}), layers {layers}", file=sys.stderr)
+    scale = lr_scales(layers, n_layers, args.bottom_lr_scale)
+    groups = [{"params": params[:2], "scale": 1.0}] + [{"params": list(model.model.layers[i].parameters()), "scale": scale[i]} for i in layers]
+    assert sum(len(g["params"]) for g in groups) == len(params)
+    print(f"trainable: {sum(p.numel() for p in params) / 1e6:.0f}M (new rows masked to {model.config.vocab_size - first_new}), layers {layers}, "
+          f"lr scale {scale}", file=sys.stderr)
 
     texts = {l: (args.data / "wiki" / f"{l}.txt").read_text(encoding="utf-8")[: args.chars_per_lang] for l in CODES}
     if args.careful_wiki:
@@ -376,16 +395,24 @@ def stage_train(args) -> int:
         parts = decompose(new, ttok.get_vocab())
         pieces = [parts.get(i, [i]) for i in range(len(tok))]
         first_piece = torch.tensor([parts[i][0] for i in sorted(parts)], device=args.device)
+    extra = []
+    if args.anchor_extra:  # v12: windows held to the teacher by the anchor alone, never trained on with cross-entropy
+        if not canonical:
+            raise SystemExit("--anchor-extra needs --anchor canonical")
+        convs = [json.loads(l)["messages"] for l in args.anchor_extra.read_text(encoding="utf-8").splitlines() if l.strip()]
+        random.Random(args.seed).shuffle(convs)
+        extra = windows([i for c in convs for i in tok.apply_chat_template(c, tokenize=True, return_dict=False)], args.seq)
+        print(f"extra anchor: {len(convs)} conversations, {len(extra)} windows, {args.kl_batch} per step, weight {args.kl_weight}", file=sys.stderr)
     per_step = args.batch * args.accum
     steps = args.tokens // (args.seq * per_step)
     data = mixture(per_lang, shares, steps * per_step, args.seed)
-    opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=0.0, betas=(0.9, 0.95))
+    opt = torch.optim.AdamW(groups, lr=args.lr, weight_decay=0.0, betas=(0.9, 0.95))  # per-parameter updates: grouping changes nothing at scale 1
     args.out.mkdir(parents=True, exist_ok=True)
     log = (args.out / "log.jsonl").open("a")
     t0 = time.time()
     for step in range(steps):
         for g in opt.param_groups:
-            g["lr"] = lr_at(step, args.lr, max(1, steps // 30), steps)
+            g["lr"] = lr_at(step, args.lr, max(1, steps // 30), steps) * g["scale"]
         kl = torch.zeros(())
         for k in range(args.accum):
             lo = (step * args.accum + k) * args.batch
@@ -414,11 +441,18 @@ def stage_train(args) -> int:
                     kl = anchor_kl(model(input_ids=a).logits, t_logits, teacher.config.vocab_size)
                     total = total + args.kl_weight * kl
             (total / args.accum).backward()
+        kl_extra = torch.zeros(())
+        if extra:  # once per step, after the micro-batches: KL only, as the canonical anchor computes it
+            rows = [extra[(step * args.kl_batch + i) % len(extra)] for i in range(args.kl_batch)]
+            with amp():
+                kl_extra = extra_anchor_kl(model, teacher, rows, pieces, tok.eos_token_id, first_piece, *table)
+            (args.kl_weight * kl_extra).backward()
         torch.nn.utils.clip_grad_norm_(params, args.clip)
         opt.step()
         opt.zero_grad(set_to_none=True)
         if (step + 1) % args.report == 0 or step + 1 == steps:
             rec = {"step": step + 1, "tokens": (step + 1) * per_step * args.seq, "loss": loss.item(), "kl": kl.item(), **({"canon": canon.item()} if table is not None else {}),
+                   **({"kl_extra": kl_extra.item()} if extra else {}),
                    "tok_s": (step + 1) * per_step * args.seq / (time.time() - t0), "lr": opt.param_groups[0]["lr"]}
             log.write(json.dumps(rec) + "\n")
             log.flush()
@@ -704,6 +738,13 @@ def stage_sample(args) -> int:
         src, refs = test_set(kind, root, lang, args.n, args.start)
         if args.reverse:
             src, refs = refs, src
+            if args.keep_encoding:  # v11's tokenizer check: sources exactly as the files have them
+                if args.strip:
+                    raise SystemExit("--keep-encoding cannot be combined with --strip")
+            else:
+                src = [strip_marks(s, lang, args.strip) for s in src]
+        elif args.strip:
+            raise SystemExit("--strip applies to Yoruba, Hausa and Igbo sources: use it with --reverse")
         prompt = reverse_prompts if args.reverse else translation_prompts
         for b in range(0, len(src), args.batch):
             chunk = src[b:b + args.batch]
@@ -720,7 +761,7 @@ def stage_sample(args) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     tmp = args.out.with_suffix(".part")  # a lost host leaves no half-written result
     tmp.write_text(json.dumps({"model": str(args.model), "test": kind, "direction": "xx-en" if args.reverse else "en-xx",
-                               "rows": rows}, indent=1, ensure_ascii=False) + "\n")
+                               "strip": args.strip, "rows": rows}, indent=1, ensure_ascii=False) + "\n")
     tmp.replace(args.out)
     return 0
 
@@ -797,6 +838,207 @@ def stage_pooled(args) -> int:
     return 0
 
 
+
+# ---- v9: trained layers moved back toward the original, and a format probe ----
+
+def tensor_index(model_dir: Path) -> dict[str, Path]:
+    """Safetensors file holding each tensor of a saved model."""
+    index = model_dir / "model.safetensors.index.json"
+    if index.exists():
+        return {k: model_dir / f for k, f in json.loads(index.read_text())["weight_map"].items()}
+    from safetensors import safe_open
+
+    with safe_open(model_dir / "model.safetensors", "pt") as f:
+        return {k: model_dir / "model.safetensors" for k in f.keys()}
+
+
+def read_tensors(model_dir: Path, names: Sequence[str]) -> dict:
+    from safetensors import safe_open
+
+    where, out = tensor_index(model_dir), {}
+    for path in sorted({where[n] for n in names}):
+        with safe_open(path, "pt") as f:
+            out.update({n: f.get_tensor(n) for n in names if where[n] == path})
+    return out
+
+
+def stage_interp(args) -> int:
+    """The trained model with layers 0..edge-1 at (1 - b)·original + b·trained
+    and the last `edge` layers at t, in fp32, stored bf16. Everything else,
+    the new vocabulary rows included, is the trained model's."""
+    import shutil
+
+    import torch
+    from transformers import AutoModelForCausalLM
+
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16)
+    n = model.config.num_hidden_layers
+    weights = {k: layer_weight(k, args.bottom, args.top, n, args.edge_layers) for k, _ in model.named_parameters()}
+    moved = [k for k, w in weights.items() if w is not None and w != 1.0]
+    orig = read_tensors(args.base, moved)
+    with torch.no_grad():
+        for k, p in model.named_parameters():
+            if k in orig:
+                if orig[k].shape != p.shape:
+                    raise ValueError(f"{k}: original {tuple(orig[k].shape)}, trained {tuple(p.shape)}")
+                w = weights[k]
+                p.copy_(((1 - w) * orig[k].float() + w * p.float()).to(p.dtype))
+    args.out.mkdir(parents=True, exist_ok=True)
+    for f in args.model.iterdir():  # tokenizer and new_tokens.json byte for byte
+        if f.is_file() and not f.name.startswith("model") and not f.name.startswith("."):
+            shutil.copy2(f, args.out / f.name)
+    model.save_pretrained(args.out, safe_serialization=True)
+    (args.out / "interp.json").write_text(json.dumps({"base": str(args.base), "trained": str(args.model), "bottom": args.bottom,
+                                                     "top": args.top, "edge_layers": args.edge_layers, "tensors_moved": len(moved)}) + "\n")
+    print(f"saved {args.out}: {len(moved)} tensors moved (bottom {args.bottom}, top {args.top})", file=sys.stderr)
+    return 0
+
+
+def stage_drift(args) -> int:
+    """‖trained − original‖ / ‖original‖ for every tensor of the edge layers."""
+    n = json.loads((args.model / "config.json").read_text())["num_hidden_layers"]
+    names = [k for k in tensor_index(args.model) if layer_weight(k, 1.0, 1.0, n, args.edge_layers) is not None]
+    t, o = read_tensors(args.model, names), read_tensors(args.base, names)
+    rows = {k: float((t[k].float() - o[k].float()).norm() / o[k].float().norm().clamp_min(1e-12)) for k in sorted(names)}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps({"base": str(args.base), "model": str(args.model), "max": max(rows.values()), "tensors": rows}, indent=1) + "\n")
+    print(f"drift {args.model.name}: max {max(rows.values()):.4g} over {len(rows)} tensors", file=sys.stderr)
+    return 0
+
+
+def stage_generate(args) -> int:
+    """v10: greedy chat replies of a model to arbitrary prompts, one JSON
+    line per prompt ({"id", "reply", "ended", "tokens"}). Prompts are JSONL
+    {"id", "prompt"}. Appends to --out and skips ids already there, so a
+    lost host loses at most one batch. Longest prompts first, to waste
+    little padding; the order does not change a greedy reply."""
+    import torch
+
+    prompts = [json.loads(l) for l in args.prompts.read_text(encoding="utf-8").split("\n") if l.strip()]  # not splitlines: U+2028
+    ids = [p["id"] for p in prompts]
+    assert len(set(ids)) == len(ids), f"{args.prompts}: an id occurs twice"
+    done = set()
+    if args.out.exists():
+        good = []
+        for line in filter(None, args.out.read_text(encoding="utf-8").split("\n")):
+            try:
+                done.add(json.loads(line)["id"])
+                good.append(line)
+            except (json.JSONDecodeError, KeyError):  # a line cut by a lost host
+                break
+        args.out.write_text("".join(l + "\n" for l in good), encoding="utf-8")
+    todo = [p for p in prompts if p["id"] not in done]
+    if not todo:
+        return 0
+    model, tok = load_model(args.model)
+    model = model.to(args.device).eval()
+    tok.padding_side = "left"
+    tok.pad_token = tok.pad_token or tok.eos_token
+    eos = eos_ids(tok, model)
+    size = {p["id"]: len(tok.encode(p["prompt"], add_special_tokens=False)) for p in todo}
+    todo.sort(key=lambda p: -size[p["id"]])
+    batches, b = [], 0
+    while b < len(todo):  # longest first; at most --batch prompts and --token-budget tokens of prompt plus reply
+        n = max(1, min(args.batch, args.token_budget // (size[todo[b]["id"]] + 64 + args.max_tokens)))
+        batches.append(todo[b:b + n])
+        b += n
+
+    def replies(chunk):
+        enc = tok.apply_chat_template([[{"role": "user", "content": p["prompt"]}] for p in chunk], add_generation_prompt=True,
+                                      return_tensors="pt", return_dict=True, padding=True).to(args.device)
+        out = None
+        try:
+            with torch.no_grad():
+                out = model.generate(**enc, max_new_tokens=args.max_tokens, do_sample=False, pad_token_id=tok.pad_token_id)
+        except torch.OutOfMemoryError:
+            if len(chunk) == 1:
+                raise
+        if out is None:  # retried outside the handler, so the failed batch's memory is free
+            del enc
+            torch.cuda.empty_cache()
+            half = len(chunk) // 2
+            print(f"out of memory at {len(chunk)} prompts: halving", file=sys.stderr)
+            return replies(chunk[:half]) + replies(chunk[half:])
+        return out[:, enc["input_ids"].shape[1]:].tolist()
+
+    written = len(done)
+    with args.out.open("a", encoding="utf-8") as f:
+        for chunk in batches:
+            for p, g in zip(chunk, replies(chunk)):
+                ended = any(i in eos for i in g)
+                if ended:
+                    g = g[:min(g.index(i) for i in eos if i in g)]
+                f.write(json.dumps({"id": p["id"], "reply": tok.decode(g, skip_special_tokens=True).strip(),
+                                    "ended": ended, "tokens": len(g)}, ensure_ascii=False) + "\n")
+            f.flush()
+            written += len(chunk)
+            print(f"{written}/{len(prompts)}", file=sys.stderr)
+    return 0
+
+
+def stage_probe(args) -> int:
+    """Format probe: the edge layers fine-tuned on a few hundred prompt-1
+    conversations, loss on the replies only, embeddings frozen, no anchor,
+    constant learning rate. Diagnostic, never a release."""
+    import random
+
+    import torch
+
+    torch.manual_seed(args.seed)
+    model, tok = load_model(args.model, torch.bfloat16)
+    n = model.config.num_hidden_layers
+    layers = [*range(args.edge_layers), *range(n - args.edge_layers, n)]
+    model.requires_grad_(False)
+    params = []
+    for i in layers:
+        block = model.model.layers[i].float()
+        block.requires_grad_(True)
+        params += list(block.parameters())
+    model = model.to(args.device)
+    model.config.use_cache = False
+    model.gradient_checkpointing_enable()
+    model.train()
+    examples = []
+    for line in args.data.read_text(encoding="utf-8").splitlines():
+        conv = json.loads(line)["messages"]
+        ids = tok.apply_chat_template(conv, tokenize=True, return_dict=False)
+        prompt = tok.apply_chat_template(conv[:1], tokenize=True, add_generation_prompt=True, return_dict=False)
+        if ids[:len(prompt)] != prompt:
+            raise ValueError("the chat template does not extend the prompt with the reply")
+        examples.append((ids[:args.seq], len(prompt)))
+    pad = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
+    opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=0.0, betas=(0.9, 0.95))
+    args.out.mkdir(parents=True, exist_ok=True)
+    log, step = (args.out / "log.jsonl").open("a"), 0
+    for epoch in range(args.epochs):
+        order = list(range(len(examples)))
+        random.Random(args.seed + epoch).shuffle(order)
+        for b in range(0, len(order), args.batch):
+            batch = [examples[i] for i in order[b:b + args.batch]]
+            width = max(len(ids) for ids, _ in batch)
+            inp = torch.tensor([ids + [pad] * (width - len(ids)) for ids, _ in batch], device=args.device)
+            lab = torch.tensor([[-100] * k + ids[k:] + [-100] * (width - len(ids)) for ids, k in batch], device=args.device)
+            att = torch.tensor([[1] * len(ids) + [0] * (width - len(ids)) for ids, _ in batch], device=args.device)
+            with torch.autocast(device_type=args.device.split(":")[0], dtype=torch.bfloat16):
+                loss = model(input_ids=inp, attention_mask=att, labels=lab).loss
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(params, 1.0)
+            opt.step()
+            opt.zero_grad(set_to_none=True)
+            step += 1
+            log.write(json.dumps({"epoch": epoch, "step": step, "loss": loss.item()}) + "\n")
+            log.flush()
+        print(f"probe epoch {epoch + 1}/{args.epochs}: loss {loss.item():.3f}", file=sys.stderr)
+    model.config.use_cache = True
+    model.to(torch.bfloat16).save_pretrained(args.out, safe_serialization=True)
+    tok.save_pretrained(args.out)
+    nt = args.model / "new_tokens.json"
+    if nt.exists():
+        (args.out / "new_tokens.json").write_text(nt.read_text())
+    print(f"saved {args.out}", file=sys.stderr)
+    return 0
+
+
 def main(argv: Sequence[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--device", default="cuda")
@@ -822,6 +1064,9 @@ def main(argv: Sequence[str]) -> int:
     t.add_argument("--lr", type=float, default=5e-5)
     t.add_argument("--clip", type=float, default=1.0)
     t.add_argument("--edge-layers", type=int, default=2)
+    t.add_argument("--layers", type=int, nargs="+", help="v11: train exactly these layers instead of the edge layers")
+    t.add_argument("--anchor-extra", type=Path, help="v12: conversations held to the teacher by the canonical anchor only, kl-batch windows per step")
+    t.add_argument("--bottom-lr-scale", type=float, default=1.0, help="v11: learning-rate factor for trained layers in the lower half")
     t.add_argument("--chars-per-lang", type=int, default=12_000_000)
     t.add_argument("--report", type=int, default=10)
     t.add_argument("--seed", type=int, default=0)
@@ -882,6 +1127,8 @@ def main(argv: Sequence[str]) -> int:
     s.add_argument("--reverse", action="store_true", help="translate yo/ha/ig into English")
     s.add_argument("--max-tokens", type=int, default=160)
     s.add_argument("--canonical", action="store_true", help="forbid pairs the tokenizer would have merged (diagnostic)")
+    s.add_argument("--strip", type=int, default=0, choices=[0, 1, 2], help="v9: strip marks from the sources (vx_core.strip_marks level)")
+    s.add_argument("--keep-encoding", action="store_true", help="v11: with --reverse, pass sources as they are, not in NFC")
     s.add_argument("--out", type=Path, required=True)
     c = sub.add_parser("score")
     c.add_argument("samples", type=Path, nargs="+", help="JSON from the sample stage")
@@ -892,8 +1139,34 @@ def main(argv: Sequence[str]) -> int:
     p.add_argument("--margin", type=float, default=1.0, help="non-inferiority margin in chrF++, chosen before looking")
     p.add_argument("--rounds", type=int, default=5000)
     p.add_argument("--out", type=Path, required=True)
+    for name, help_ in (("interp", "trained layers moved back toward the original (v9)"), ("drift", "edge-layer distance from the original (v9)")):
+        x = sub.add_parser(name, help=help_)
+        x.add_argument("--base", type=Path, required=True, help="the original N-ATLaS")
+        x.add_argument("--model", type=Path, required=True, help="the trained model")
+        x.add_argument("--out", type=Path, required=True)
+        x.add_argument("--edge-layers", type=int, default=2)
+        if name == "interp":
+            x.add_argument("--bottom", type=float, required=True, help="weight on the trained bottom layers")
+            x.add_argument("--top", type=float, required=True, help="weight on the trained top layers")
+    e = sub.add_parser("generate", help="greedy replies to JSONL prompts, resumable (v10)")
+    e.add_argument("--model", type=Path, required=True)
+    e.add_argument("--prompts", type=Path, required=True, help='JSONL {"id", "prompt"}')
+    e.add_argument("--out", type=Path, required=True)
+    e.add_argument("--batch", type=int, default=64)
+    e.add_argument("--max-tokens", type=int, default=512)
+    e.add_argument("--token-budget", type=int, default=120000, help="prompt plus reply tokens per batch, so long prompts come in smaller batches")
+    q = sub.add_parser("probe", help="format probe on prompt-1 conversations (v9, diagnostic)")
+    q.add_argument("--model", type=Path, required=True)
+    q.add_argument("--data", type=Path, required=True)
+    q.add_argument("--out", type=Path, required=True)
+    q.add_argument("--lr", type=float, default=1e-5)
+    q.add_argument("--epochs", type=int, default=2)
+    q.add_argument("--batch", type=int, default=8)
+    q.add_argument("--seq", type=int, default=1024)
+    q.add_argument("--edge-layers", type=int, default=2)
+    q.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
-    stages = {"smol": stage_smol, "pooled": stage_pooled, "onpolicy": stage_onpolicy, "score": stage_score, "distill": stage_distill, "expand": stage_expand, "bpc": stage_bpc, "train": stage_train, "sample": stage_sample}
+    stages = {"smol": stage_smol, "pooled": stage_pooled, "onpolicy": stage_onpolicy, "score": stage_score, "distill": stage_distill, "expand": stage_expand, "bpc": stage_bpc, "train": stage_train, "sample": stage_sample, "interp": stage_interp, "drift": stage_drift, "probe": stage_probe, "generate": stage_generate}
     return stages[args.stage](args)
 
 if __name__ == "__main__":

@@ -5,7 +5,8 @@ and trains the model to use them. This document gives the release recipe, the
 evaluation protocol, every reported number with the file it comes from, the
 known defects, and the limits of the evidence. Raw results are in `results/`.
 
-The release is v6.
+The current release is v13 (section 4.6). Sections 2 to 4.5, 5 and 6 describe
+v6, the release it supersedes and on which it is built.
 
 ## 1. The problem
 
@@ -383,6 +384,64 @@ row used), changes by 0.0 pooled over Yoruba, Hausa and Igbo (−1.4, +1.5;
 +6.3). The vocabulary's inference cost is in the trained weights, not in
 reading the new tokens. Not part of the decisions.
 
+### 4.6 v13: recovering reasoning through self-distillation
+
+v6 kept translation quality but lost reasoning: on IrokoBench it scores 7.5
+points below the base model on AfriXNLI and 11.6 on AfriMGSM, averaged over
+Yoruba, Hausa and Igbo (4.4, 4.5). v13 addresses this with three changes to
+the v6 recipe, each selected by a preregistered comparison:
+
+1. **Layers.** Training updates layers 0, 1, 30 and 31, with layers 0 and 1
+   at a quarter of the learning rate.
+2. **Self-distilled maths.** 5,831 solutions written by the base model to
+   GSM8K training questions, translated into Yoruba, Hausa and Igbo by the
+   base model and kept in English, are added to the training mix. A
+   solution is kept only if its final number matches GSM8K's answer, it
+   does not loop, and it ends normally. Items sharing a 13-gram with
+   IrokoBench, FLORES-200 or NTREX-128 are removed. The translation and
+   Wikipedia data are v6's.
+3. **NFC.** The tokenizer normalises input to Unicode NFC, which removes the
+   decomposed-input loss in section 6.
+
+**Selection.** An earlier mix also contained the base model's replies to
+general chat prompts. A leave-one-out ablation showed those replies
+suppressed the model's ability to answer *contradiction* on AfriXNLI;
+removing them raised generative contradiction recall from 7.5% to 21.5%
+(+14.0, interval +11.2 to +16.8), against 20.7% for the base model. The
+resulting recipe was confirmed at three seeds against v6's two: *R*
+(accuracy over AfriXNLI and AfriMGSM, section 4.5) +5.2 (+4.1, +6.3).
+
+**The released model** (seed 2, built by the `gguf` unit of
+`scripts/cloud_vx_v13.sh`), against the base model at full precision:
+
+| | Yoruba | Hausa | Igbo | Pooled |
+|---|---|---|---|---|
+| AfriMGSM, v13 / base | 37.2 / 33.6 | 40.4 / 38.8 | 26.0 / 28.0 | +1.1 (−2.3, +4.4) |
+| AfriXNLI, v13 / base | 52.7 / 57.7 | 53.0 / 57.5 | 52.5 / 58.8 | −5.3 (−7.4, −3.1) |
+| AfriMGSM, v6 / base | 20.4 / 33.6 | 29.2 / 38.8 | 16.0 / 28.0 | −11.6 |
+| AfriXNLI, v6 / base | 48.2 / 57.7 | 53.3 / 57.5 | 50.0 / 58.8 | −7.5 |
+
+Translation, chrF++ change against the base model with 95% paired-bootstrap
+intervals:
+
+| | Yoruba | Hausa | Igbo |
+|---|---|---|---|
+| English → X, Q4_K_M, 250 NTREX-128 sentences | +3.1 (+2.0, +4.1) | −0.4 (−1.2, +0.4) | +0.3 (−1.3, +1.7) |
+| English → X, 1,497 held-out sentences | +2.2 (+1.6, +2.8) | −0.4 (−0.9, 0.0) | +0.1 (−0.5, +0.7) |
+| X → English, 1,497 held-out sentences | +0.2 (−0.4, +0.7) | −0.1 (−0.5, +0.4) | +0.9 (+0.5, +1.4) |
+
+On the 750 shipped-file translations, v13 produced 2 looping replies (v6 5,
+base model 3), 8 truncated replies (v6 13, base model 15) and 1 reply with
+an incomplete UTF-8 character (v6 0, base model 0). llama.cpp's tokenisation
+of the GGUF matches the reference tokenizer on 2,000 of 2,000 texts; the
+GGUF does not apply the NFC normaliser itself, so clients should send NFC
+text. v13 has the same tokens per character as v6 on these sentences, so the
+speed results in 4.3 carry over.
+
+Files: `results/vocab/v13/analysis.json` (selection and seeds),
+`results/vocab/v13/iroko-no-chat-ship/` (reasoning of the released model),
+`results/vocab/v13/gguf/` (shipped file, tokenizer parity).
+
 ## 5. Known defects and workarounds
 
 **Yoruba loops.** Mostly the vocabulary. On the 1,497 held-out sentences
@@ -487,5 +546,6 @@ Paths are relative to the repository root. `V` is `uv run --project wazocore
 | Whole request (4.3) | Mean of `prompt_ms + gen_ms` over the paired samples in the two files above | n/a |
 | v7 (4.4) | `bash scripts/cloud_vx_v7.sh` on the GPU host, `scripts/cloud_pull.sh` on the laptop, then `uv run --project wazocore --with sacrebleu python scripts/v7_analysis.py results/vocab/v7` | `results/vocab/v7/analysis.json` |
 | v8 (4.5) | `bash scripts/cloud_vx_v8.sh` on the GPU host, `RUN=v8 scripts/cloud_pull.sh` on the laptop, then `uv run --project wazocore --with sacrebleu python scripts/v8_analysis.py results/vocab/v7 results/vocab/v8` | `results/vocab/v8/analysis.json` |
+| v13 (4.6) | `bash scripts/cloud_vx_v13.sh` on the GPU host with the v7 to v12 result folders uploaded (`scripts/cloud_vx_upload.sh`), `RUN=v13 scripts/cloud_pull.sh` on the laptop, then `uv run --project wazocore --with sacrebleu python scripts/v13_analysis.py results/vocab`; `UNITS=gguf` builds and checks the release file | `results/vocab/v13/` |
 | Repetition penalty (5) | `SAMPLER='{"repeat_penalty": 1.1}' python scripts/gguf_quality.py 250 OUT NAME FILE.gguf`, then `V score` against the plain file | `results/vocab/gguf-quality/` |
 | Retry (5) | `uv run --project wazocore python scripts/retry_probe.py FILE.gguf OUT.json` | `results/vocab/gguf-quality/retry-v6-long.json` |

@@ -3,13 +3,15 @@ Q4_K_M GGUFs through llama-server, one model in memory at a time
 (docs/METHOD.md, section 3). Rows suit `vx_torch score`; a stopped run
 resumes where it left off.
 
-    [SAMPLER='{"repeat_penalty": 1.1}'] python scripts/gguf_quality.py SENTENCES OUT_DIR [NAME OTHER.gguf]
+    [SAMPLER='{"repeat_penalty": 1.1}'] [SKIP=wazocore] python scripts/gguf_quality.py SENTENCES OUT_DIR [NAME OTHER.gguf]
     python -m wazocore.vx_torch score OUT_DIR/ntrex-gguf-n-atlas.json OUT_DIR/ntrex-gguf-wazocore.json --out OUT_DIR/summary.json
 """
 import json, os, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 N = int(sys.argv[1]); OUT = Path(sys.argv[2]); OUT.mkdir(parents=True, exist_ok=True)
 MODELS = {"n-atlas": "data/models/N-ATLaS.Q4_K_M.gguf", "wazocore": "data/models/gguf-vx4/WazoCore-8B-v4.Q4_K_M.gguf"}
+for k in filter(None, os.environ.get("SKIP", "").split(",")):  # SKIP=wazocore: leave out a default file
+    MODELS.pop(k)
 if len(sys.argv) > 4:  # another file to score against the same original replies: NAME PATH
     MODELS[sys.argv[3]] = sys.argv[4]
 SAMPLER = json.loads(os.environ.get("SAMPLER", "{}"))  # extra request fields for the NAME file, e.g. a repetition penalty

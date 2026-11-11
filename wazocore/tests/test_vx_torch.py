@@ -238,3 +238,135 @@ def test_test_set_takes_a_slice(tmp_path):
     (tmp_path / "newstest2019-src.eng.txt").write_text("a\nb\nc\nd\n", encoding="utf-8")
     (tmp_path / "newstest2019-ref.ibo.txt").write_text("A\nB\nC\nD\n", encoding="utf-8")
     assert test_set("ntrex", tmp_path, "ig", 10, start=2) == (["c", "d"], ["C", "D"])
+
+
+def test_interp_moves_edge_layers_and_drift_measures_it(tiny, tmp_path):
+    import json
+
+    import torch
+    from safetensors.torch import load_file
+
+    from wazocore.vx_torch import main
+
+    base, trained, out = tmp_path / "base", tmp_path / "trained", tmp_path / "out"
+    tiny.to(torch.bfloat16).save_pretrained(base)
+    with torch.no_grad():
+        for p in tiny.parameters():
+            p.add_(1.0)
+    tiny.save_pretrained(trained)
+    (trained / "new_tokens.json").write_text("{}")
+    assert main(["interp", "--base", str(base), "--model", str(trained), "--out", str(out),
+                 "--edge-layers", "1", "--bottom", "0", "--top", "0.5"]) == 0
+    o, t, m = (load_file(d / "model.safetensors") for d in (base, trained, out))
+    k0, k1 = "model.layers.0.mlp.up_proj.weight", "model.layers.1.mlp.up_proj.weight"
+    assert torch.equal(m[k0], o[k0])
+    assert torch.allclose(m[k1].float(), (o[k1].float() + t[k1].float()) / 2, atol=1e-2)
+    assert torch.equal(m["model.embed_tokens.weight"], t["model.embed_tokens.weight"])
+    assert (out / "new_tokens.json").read_text() == "{}"
+    assert main(["drift", "--base", str(base), "--model", str(base), "--out", str(tmp_path / "d.json"), "--edge-layers", "1"]) == 0
+    assert json.loads((tmp_path / "d.json").read_text())["max"] == 0.0
+
+
+def _char_model(dst):
+    """The tiny fixture with a character-level tokenizer and a chat template."""
+    import shutil
+
+    from tokenizers import Regex, Tokenizer, decoders, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    shutil.copytree(TINY, dst)
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789 .,?!>"
+    vocab = {"<pad>": 0, "<s>": 1, "</s>": 2, "<unk>": 3, **{c: 4 + i for i, c in enumerate(chars)}}
+    t = Tokenizer(models.WordLevel(vocab, unk_token="<unk>"))
+    t.pre_tokenizer = pre_tokenizers.Split(Regex("."), "isolated")
+    t.decoder = decoders.Fuse()
+    tok = PreTrainedTokenizerFast(tokenizer_object=t, bos_token="<s>", eos_token="</s>", pad_token="<pad>", unk_token="<unk>")
+    tok.chat_template = "{% for m in messages %}{{ m['content'] }}{% endfor %}{% if add_generation_prompt %}>{% endif %}"
+    tok.save_pretrained(dst)
+    return dst
+
+
+def test_generate_resumes_after_a_cut_line(tmp_path):
+    pytest.importorskip("torch")
+    import json
+
+    from wazocore.vx_torch import main
+
+    model = _char_model(tmp_path / "m")
+    prompts = tmp_path / "p.jsonl"
+    prompts.write_text("".join(json.dumps({"id": f"q{i}", "prompt": p}) + "\n" for i, p in enumerate(["two plus two", "hi", "what is 7 times 6"])))
+    out = tmp_path / "out.jsonl"
+    run = lambda: main(["--device", "cpu", "generate", "--model", str(model), "--prompts", str(prompts), "--out", str(out), "--batch", "2", "--max-tokens", "6"])
+    assert run() == 0
+    first = {r["id"]: r for r in map(json.loads, out.read_text().splitlines())}
+    assert sorted(first) == ["q0", "q1", "q2"]
+    assert all(set(r) == {"id", "reply", "ended", "tokens"} and r["tokens"] <= 6 for r in first.values())
+    lines = out.read_text().splitlines()
+    out.write_text("\n".join(lines[:2]) + "\n" + lines[2][:5])  # a host lost mid-write
+    assert run() == 0
+    again = [json.loads(l) for l in out.read_text().splitlines()]
+    assert sorted(r["id"] for r in again) == ["q0", "q1", "q2"]
+    assert {r["id"]: r for r in again} == first
+    small = tmp_path / "small.jsonl"  # a token budget that forces one prompt per batch gives the same greedy replies
+    assert main(["--device", "cpu", "generate", "--model", str(model), "--prompts", str(prompts), "--out", str(small),
+                 "--batch", "2", "--max-tokens", "6", "--token-budget", "1"]) == 0
+    assert {r["id"]: r["reply"] for r in map(json.loads, small.read_text().splitlines())} == {k: v["reply"] for k, v in first.items()}
+
+
+def _trained_layers(tmp_path, *flags):
+    """Which layers' weights a short training run changed, on the tiny
+    model (2 layers) with the character tokenizer and no new tokens."""
+    import torch
+    from safetensors.torch import load_file
+
+    from wazocore.vx_torch import main
+
+    model = _char_model(tmp_path / "m")
+    (tmp_path / "d" / "wiki").mkdir(parents=True)
+    for lang in ("en", "yo", "ha", "ig"):
+        (tmp_path / "d" / "wiki" / f"{lang}.txt").write_text("the cat sat on the mat and ate. " * 40)
+    out = tmp_path / "out"
+    assert main(["--device", "cpu", "train", "--model", str(model), "--data", str(tmp_path / "d"), "--out", str(out),
+                 "--tokens", "96", "--seq", "16", "--batch", "2", "--lr", "1e-2", "--eval-every", "0", "--edge-layers", "1", *flags]) == 0
+    before, after = load_file(model / "model.safetensors"), load_file(out / "model.safetensors")
+    # frozen layers are loaded in bf16, so compare against the original rounded the same way
+    same = lambda k: torch.equal(before[k].to(after[k].dtype), after[k])
+    moved = lambda i: not all(same(k) for k in before if f"layers.{i}." in k)
+    return [i for i in (0, 1) if moved(i)]
+
+
+def test_train_layers_flag_freezes_the_rest(tmp_path):
+    pytest.importorskip("torch")
+    assert _trained_layers(tmp_path / "a") == [0, 1]
+    assert _trained_layers(tmp_path / "b", "--layers", "1") == [1]
+
+
+def test_bottom_lr_scale_zero_keeps_the_bottom_layer(tmp_path):
+    pytest.importorskip("torch")
+    assert _trained_layers(tmp_path, "--bottom-lr-scale", "0") == [1]
+
+
+def test_extra_anchor_is_zero_for_the_teacher_itself_and_trains_the_student(tiny):
+    import copy
+
+    import torch
+
+    from wazocore.vx_core import merge_table
+    from wazocore.vx_torch import expand_model, extra_anchor_kl
+
+    rows = [[0, 3, 5, 10, 11], [0, 12, 13, 14, 15]]
+    # The original model against itself, no new tokens: nothing to anchor.
+    offsets, rights = (torch.tensor(x, dtype=torch.long) for x in merge_table([], {}, 256))
+    same = extra_anchor_kl(tiny, tiny, rows, [[i] for i in range(256)], 0, torch.tensor([], dtype=torch.long), offsets, rights)
+    assert float(same) == pytest.approx(0.0, abs=1e-5)
+    # An expanded student reading a new token: the anchor is positive and reaches the student's weights only.
+    student = expand_model(copy.deepcopy(tiny), {256: [3, 5]}, {256: [1.0, 1.0]})
+    vocab = {**{f"t{i}": i for i in range(256)}, "t3t5": 256}
+    offsets, rights = map(torch.tensor, merge_table([{"token": "t3t5", "left": "t3", "right": "t5"}], vocab, 257))
+    tiny.requires_grad_(False)
+    kl = extra_anchor_kl(student, tiny, [[0, 256, 10, 11], [0, 12, 13, 14]], [[i] for i in range(256)] + [[3, 5]], 0,
+                         torch.tensor([3]), offsets, rights)
+    assert torch.isfinite(kl) and float(kl) > 0
+    kl.backward()
+    assert student.get_output_embeddings().weight.grad is not None
+    assert all(p.grad is None for p in tiny.parameters())

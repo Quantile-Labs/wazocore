@@ -1,0 +1,41 @@
+{
+ "model": "/workspace/work/no-chat-s4",
+ "rows": [
+  {
+   "lang": "en",
+   "sentences": 1012,
+   "chars": 131966,
+   "tokens": 27114,
+   "nll_nats": 91859.69474411011,
+   "bpc": 1.0042399259271453,
+   "tokens_per_char": 0.20546201294272767
+  },
+  {
+   "lang": "yo",
+   "sentences": 1012,
+   "chars": 126848,
+   "tokens": 46603,
+   "nll_nats": 204204.18422698975,
+   "bpc": 2.322499084834246,
+   "tokens_per_char": 0.3673924697275479
+  },
+  {
+   "lang": "ha",
+   "sentences": 1012,
+   "chars": 140069,
+   "tokens": 33838,
+   "nll_nats": 147700.01711654663,
+   "bpc": 1.5212936640745407,
+   "tokens_per_char": 0.24158093511055265
+  },
+  {
+   "lang": "ig",
+   "sentences": 1012,
+   "chars": 134560,
+   "tokens": 38612,
+   "nll_nats": 177984.7723350525,
+   "bpc": 1.9082769649340918,
+   "tokens_per_char": 0.2869500594530321
+  }
+ ]
+}

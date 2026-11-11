@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pulls a run's results (RUN=v7 or v8, default v7) from the pod every few
+# Pulls a run's results (RUN=v7 to v13, default v7) from the pod every few
 # minutes, so a lost Community
 # Cloud host costs at most the step it was on. Exits once the run is done;
 # with STOP=1 it then stops the pod, which bills until stopped.
@@ -16,7 +16,7 @@ while :; do
     else
         echo "$(date +%H:%M) pod unreachable; results so far are in $out"
     fi
-    # the v7 and v8 data steps run v6, which logs its own ALL-DONE first
+    # the v7 to v13 data steps run v6, which logs its own ALL-DONE first
     ends=$(grep -c ALL-DONE "$run" 2>/dev/null) || true
     if [ "${ends:-0}" -ge 2 ] && tail -1 "$run" | grep -q ALL-DONE; then
         echo "done: results in $out"
